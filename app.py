@@ -5,26 +5,30 @@ from openai import OpenAI
 from PIL import Image
 
 # ==========================================
-# 🔴 ใส่ API Key ของ OpenAI ตรงนี้ (แบบตรงๆ)
-import streamlit as st
-# ... (import อื่นๆ เหมือนเดิม)
+# 🔴 ตั้งค่า API KEY
+# เวลาขึ้นเว็บจริง เราจะไปใส่รหัสใน Secrets ของ Streamlit Cloud แทน
+# ดังนั้นตรงนี้ปล่อยว่างไว้ หรือใส่โค้ดดักจับแบบนี้ครับ:
 
-# โค้ดส่วนดึง API Key จากตู้เซฟ (Secrets)
 try:
     if "OPENAI_API_KEY" in st.secrets:
         OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
     else:
-        st.error("ไม่พบ API Key กรุณาตั้งค่าใน Secrets")
-        st.stop()
+        # กรณีรันในเครื่อง (และไม่ได้สร้างไฟล์ secrets.toml)
+        # ให้ใส่รหัสตรงนี้เพื่อทดสอบ แล้วลบออกก่อนอัพขึ้น GitHub
+        OPENAI_API_KEY = "" # <--- ลบรหัสตรงนี้ออกให้ว่างๆ แบบนี้ครับ!
+        
+        if not OPENAI_API_KEY:
+            st.warning("⚠️ ไม่พบ API Key! กรุณาใส่ใน Streamlit Secrets หรือใส่ชั่วคราวในโค้ด")
+            st.stop()
+            
 except FileNotFoundError:
-    st.error("ไม่พบไฟล์ Secrets กรุณาตั้งค่าบน Streamlit Cloud")
+    st.error("ไม่พบการตั้งค่า Secrets")
     st.stop()
-
-client = OpenAI(api_key=OPENAI_API_KEY)
 # ==========================================
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# --- 1. ฟังก์ชั่นพื้นฐาน (แปลงภาพ) ---
 def encode_image(image):
     buffered = io.BytesIO()
     if image.mode in ("RGBA", "P"):
@@ -32,45 +36,19 @@ def encode_image(image):
     image.save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-def generate_stock_prompt(image_input):
+# --- 2. ฟังก์ชั่นสร้าง Prompt ครั้งแรก (The Creator) ---
+def generate_initial_prompt(image_input):
     base64_image = encode_image(image_input)
     
-    # --- UPGRADED BRAIN V3: เพิ่มหมวด Travel, Food, Spa, Lifestyle ---
     system_instruction = """
     You are an elite "Stock Photography Art Director". 
-    Your task is to analyze the image and write a premium generative AI prompt.
+    Analyze the image and write a premium generative AI prompt.
     
-    --- 1. CATEGORY DETECTION ---
-    Identify the primary niche of the image from these categories:
-    - [FINANCE/BUSINESS]: Stocks, Office, Meeting, Growth, Economy.
-    - [COMMODITIES/ENERGY]: Gold, Oil, Solar, Industry.
-    - [BEAUTY/SPA/WELLNESS]: Skincare, Massage, Zen, Cosmetics, Relaxation.
-    - [TRAVEL/HOTEL]: Resorts, Lobby, Luggage, Tourism, Infinity Pool, Room Service.
-    - [FOOD/RESTAURANT]: Fine Dining, Plating, Chef, Ingredients, Cafe atmosphere.
-    - [LIFESTYLE]: Candid moments, Hobbies, Friends, Daily life, Authentic.
-    - [HEALTH/FITNESS]: Gym, Yoga, Medical, Hospital.
-    - [3D/ABSTRACT]: Podiums, Minimalist backgrounds.
+    1. CATEGORY DETECTION (Finance, Commodities, Beauty, Travel, Food, Lifestyle).
+    2. KEYWORD INJECTION: Weave in specific technical keywords based on category.
+    3. VISUAL STYLE: "Hyper-realistic, 8k resolution, cinematic lighting, photorealistic, highly detailed, depth of field, commercial stock photography, shot on 35mm lens."
     
-    --- 2. KEYWORD INJECTION PROTOCOL ---
-    Based on the detected category, YOU MUST weave these specific keywords into the prompt:
-    
-    * IF BEAUTY/SPA: "Glowing skin, skincare routine, rejuvenation, luxury spa, aromatherapy, herbal ingredients, zen atmosphere, soft towels, flawless complexion, natural beauty, serenity, pampering."
-    * IF TRAVEL/HOTEL: "Luxury resort, wanderlust, boutique hotel, hospitality, check-in, vacation mode, tourism, infinity pool, scenic view, hotel lobby, suitcase, getaway, concierge service."
-    * IF FOOD/RESTAURANT: "Culinary arts, fine dining, gourmet plating, mouth-watering, fresh ingredients, chef at work, restaurant ambiance, savory, food photography, delicious, menu, wine pairing."
-    * IF LIFESTYLE: "Authentic moment, candid shot, enjoying life, social gathering, leisure time, modern lifestyle, happiness, genuine emotion, diversity, real people."
-    * IF FINANCE/BUSINESS: "Financial growth, investment portfolio, corporate success, modern office, leadership, teamwork, economic analysis, fintech."
-    * IF COMMODITIES/ENERGY: "Gold bullion, wealth, oil rig, renewable energy, sustainability, industrial power, precious metals."
-    * IF HEALTH/FITNESS: "Active lifestyle, wellness, yoga pose, medical care, healthy living, determination, gym workout."
-    * IF 3D/ABSTRACT: "Octane render, minimalism, pastel colors, podium, product display, soft studio lighting, clean composition."
-    
-    --- 3. VISUAL STYLE (ALWAYS INCLUDE) ---
-    "Hyper-realistic, 8k resolution, cinematic lighting, photorealistic, highly detailed, depth of field, sharp focus, commercial stock photography, shot on 35mm lens."
-
-    --- OUTPUT FORMAT ---
-    - Write ONE cohesive, detailed paragraph.
-    - Start with the Subject.
-    - Describe Action/Context -> Environment -> Lighting/Mood -> Specific Keywords -> Technical Style.
-    - NO intro/outro text. Just the prompt.
+    OUTPUT: A single detailed paragraph. Start with the Subject. No Intro/Outro.
     """
 
     try:
@@ -79,65 +57,129 @@ def generate_stock_prompt(image_input):
             messages=[
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": [
-                    {"type": "text", "text": "Generate a detailed stock photo prompt for this image."},
+                    {"type": "text", "text": "Generate a detailed stock photo prompt."},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                 ]}
             ],
-            max_tokens=500, # เพิ่มความยาวอีกนิดสำหรับบรรยายอาหาร/สถานที่
+            max_tokens=500,
             temperature=0.6
         )
         return response.choices[0].message.content
     except Exception as e:
         return f"Error: {e}"
 
-# --- UI ส่วนหน้าจอ ---
-st.set_page_config(layout="wide", page_title="Universal Stock AI V3")
-st.markdown("""
-<style>
-    .stTextArea textarea { font-size: 16px !important; color: #222; background-color: #f8f9fa; }
-    h1 { color: #2E86C1; }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("💎 Premium Stock Prompt AI (Full Categories)")
-st.caption("รองรับ: Beauty, Spa, Hotel, Travel, Food, Lifestyle, Business, Gold, Oil, 3D")
-
-col_left, col_right = st.columns([1, 2])
-
-with col_left:
-    st.success("📂 **Upload Zone**")
-    uploaded_files = st.file_uploader(
-        "อัพโหลดภาพ Ref (คละหมวดหมู่ได้เลย)", 
-        type=['png', 'jpg', 'jpeg', 'webp'], 
-        accept_multiple_files=True
-    )
+# --- 3. ฟังก์ชั่นแก้งาน (The Editor) 🔴 เพิ่มใหม่ ---
+def refine_prompt(original_prompt, user_instruction):
+    system_instruction = """
+    You are a professional Prompt Editor. 
+    Your goal is to REWRITE the stock photography prompt based on the user's feedback.
     
-    st.divider()
-    start_btn = st.button("⚡ Generate Prompts", type="primary", use_container_width=True)
-
-with col_right:
-    st.header("📝 Generated Prompts")
+    RULES:
+    1. Keep the core subject and technical style (8k, hyper-realistic) of the original prompt.
+    2. APPLY the user's specific instruction strictly (e.g., change lighting, add texture, change mood).
+    3. Output the FULL corrected prompt (not just the changes).
+    4. Do not talk to the user. Just output the prompt.
+    """
     
-    if start_btn and uploaded_files:
-        progress_bar = st.progress(0)
-        
-        for i, uploaded_file in enumerate(uploaded_files):
-            image = Image.open(uploaded_file)
+    user_message = f"""
+    ORIGINAL PROMPT: "{original_prompt}"
+    
+    USER INSTRUCTION: "{user_instruction}"
+    
+    Please rewrite the prompt to incorporate the instruction while maintaining high stock photo quality.
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_message}
+            ],
+            max_tokens=500
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error: {e}"
+
+# --- UI Application ---
+st.set_page_config(layout="wide", page_title="AI Stock Prompt Pro (Editable)")
+st.markdown("""<style>.stTextArea textarea { font-size: 16px !important; background-color: #f8f9fa; }</style>""", unsafe_allow_html=True)
+
+st.title("🎨 AI Stock Prompt Pro (Editable)")
+st.caption("Generate -> Review -> Refine (แก้ไขรายรูปได้ทันที)")
+
+# --- Session State (ระบบความจำ) ---
+# เราต้องสร้างตัวแปรเก็บ Prompt ไว้ ไม่ให้หายเวลากดปุ่ม
+if 'prompts_data' not in st.session_state:
+    st.session_state['prompts_data'] = {}
+
+# --- Sidebar ---
+with st.sidebar:
+    st.header("1. Upload Zone")
+    uploaded_files = st.file_uploader("เลือกรูปภาพ (Ref)", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    
+    # ปุ่มเริ่ม Gen (กดเพื่อเริ่มสร้างครั้งแรก)
+    if uploaded_files:
+        if st.button("⚡ Generate All Prompts", type="primary", use_container_width=True):
+            with st.spinner("กำลังสร้าง Prompt ชุดแรก..."):
+                progress_bar = st.progress(0)
+                for i, file in enumerate(uploaded_files):
+                    # เช็คว่ารูปนี้เคยเจนรึยัง ถ้ายังค่อยเจน (ประหยัดเงิน)
+                    if file.name not in st.session_state['prompts_data']:
+                        img = Image.open(file)
+                        prompt = generate_initial_prompt(img)
+                        st.session_state['prompts_data'][file.name] = prompt
+                    progress_bar.progress((i + 1) / len(uploaded_files))
+                st.success("เสร็จสิ้น!")
+
+# --- Main Area ---
+st.header("2. Review & Refine")
+
+if uploaded_files:
+    # วนลูปแสดงผลทีละรูป
+    for i, file in enumerate(uploaded_files):
+        # ถ้ายังไม่มี Prompt (เพิ่งอัพโหลดแต่ยังไม่กด Gen) ให้ข้ามไปก่อน
+        if file.name not in st.session_state['prompts_data']:
+            continue
             
-            with st.container(border=True):
-                c1, c2 = st.columns([1, 4])
-                with c1:
-                    st.image(image, use_column_width=True)
-                with c2:
-                    with st.spinner('AI กำลังวิเคราะห์สไตล์ภาพและเลือกคีย์เวิร์ด...'):
-                        prompt_text = generate_stock_prompt(image)
-                        st.text_area(
-                            f"Prompt #{i+1}",
-                            value=prompt_text,
-                            height=200, # ขยายกล่องข้อความให้ใหญ่ขึ้น
-                            key=f"p_{i}"
-                        )
-            
-            progress_bar.progress((i + 1) / len(uploaded_files))
+        current_prompt = st.session_state['prompts_data'][file.name]
+        image = Image.open(file)
         
-        st.success("✅ เสร็จสิ้นทุกรูปครับ")
+        # สร้างกรอบแสดงผล
+        with st.container(border=True):
+            c1, c2 = st.columns([1, 3])
+            
+            # คอลัมน์ซ้าย: รูปภาพ
+            with c1:
+                st.image(image, use_column_width=True)
+                st.caption(f"File: {file.name}")
+            
+            # คอลัมน์ขวา: Prompt และเครื่องมือแก้ไข
+            with c2:
+                # 1. แสดง Prompt ปัจจุบัน
+                st.subheader(f"Prompt #{i+1}")
+                st.text_area("Result:", value=current_prompt, height=150, key=f"display_{file.name}")
+                
+                # 2. ส่วนแก้ไข (Expander)
+                with st.expander(f"🛠️ ต้องการแก้ Prompt รูปนี้? ({file.name})"):
+                    # ช่องกรอกคำสั่งแก้
+                    user_instruction = st.text_input(
+                        "พิมพ์คำสั่งแก้ที่นี่ (เช่น: ขอธนบัตรยับๆ, เปลี่ยนแสงเป็นตอนเย็น)", 
+                        key=f"input_{file.name}"
+                    )
+                    
+                    # ปุ่มกดอัพเดท
+                    if st.button("Update Prompt 🔄", key=f"btn_{file.name}"):
+                        if user_instruction:
+                            with st.spinner("AI กำลังเรียบเรียง Prompt ใหม่..."):
+                                # เรียกฟังก์ชั่น Editor
+                                new_prompt = refine_prompt(current_prompt, user_instruction)
+                                # บันทึกทับอันเดิมในความจำ
+                                st.session_state['prompts_data'][file.name] = new_prompt
+                                st.rerun() # รีเฟรชหน้าจอเพื่อแสดงผลใหม่ทันที
+                        else:
+                            st.warning("กรุณาพิมพ์คำสั่งก่อนกดปุ่มครับ")
+
+else:
+    st.info("👈 กรุณาอัพโหลดรูปภาพและกด Generate ทางซ้ายมือ")
