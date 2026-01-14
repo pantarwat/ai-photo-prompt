@@ -104,9 +104,24 @@ def refine_prompt(original_prompt, user_instruction):
 
 # --- UI Application ---
 st.set_page_config(layout="wide", page_title="AI Stock Prompt Pro (Editable)")
-st.markdown("""<style>.stTextArea textarea { font-size: 16px !important; background-color: #f8f9fa; }</style>""", unsafe_allow_html=True)
+
+# ==========================================
+# 🔴 แก้ไขส่วนนี้ครับ (เพิ่ม color: #222222;)
+# ==========================================
+st.markdown("""
+<style>
+    /* บังคับให้ตัวหนังสือในกล่อง Text Area เป็นสีดำเข้ม */
+    .stTextArea textarea {
+        font-size: 16px !important;
+        background-color: #f8f9fa !important; /* สีพื้นหลังเทาอ่อน */
+        color: #222222 !important;           /* สีตัวอักษรดำเข้ม */
+    }
+</style>
+""", unsafe_allow_html=True)
+# ==========================================
 
 st.title("🎨 AI Stock Prompt Pro (Editable)")
+# ... (โค้ดส่วนอื่นๆ เหมือนเดิม)
 st.caption("Generate -> Review -> Refine (แก้ไขรายรูปได้ทันที)")
 
 # --- Session State (ระบบความจำ) ---
